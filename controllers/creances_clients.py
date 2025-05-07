@@ -1,36 +1,40 @@
 # -*- coding: utf-8 -*-
 from openerp import http
-from openerp.http import request
+from openerp.http import request, Response
 from datetime import datetime, date
+import json
 
 
 class CreancesClientsAPI(http.Controller):
 
-    @http.route('/api/creances_clients', type='json', auth='user')
+    @http.route('/api/creances_clients', type='http', auth='none', methods=['GET'])
     def get_creances_clients(self, **kwargs):
+        token = request.httprequest.headers.get('X-API-KEY')
+        if not token:
+            return Response(json.dumps({'error': 'Clé API manquante'}), status=401, content_type='application/json')
+
+        user = request.env['res.users'].sudo().search([('api_key', '=', token)], limit=1)
+        if not user:
+            return Response(json.dumps({'error': 'Clé API invalide'}), status=403, content_type='application/json')
+
         today = date.today()
         result = []
 
         invoices = request.env['account.invoice'].sudo().search([
             ('type', '=', 'out_invoice'),
             ('state', 'in', ['open', 'paid']),
+            ('user_id', '=', user.id)
         ])
 
         for inv in invoices:
-            if inv.state == 'paid':
-                reste_a_payer = 0.0
-                reglement = inv.amount_total
-                statut = "Payée"
-                jours_retard = ""
-            else:
-                reste_a_payer = inv.residual
-                reglement = inv.amount_total - inv.residual
-                statut = "Non payée"
-                if inv.date_due:
-                    due_date = datetime.strptime(inv.date_due, "%Y-%m-%d").date()
-                    jours_retard = (today - due_date).days if today > due_date else ""
-                else:
-                    jours_retard = ""
+            reste_a_payer = inv.residual if inv.state == 'open' else 0.0
+            reglement = inv.amount_total - reste_a_payer
+            statut = "payée" if inv.state == 'paid' else "non payée"
+
+            jours_retard = 0
+            if inv.state != 'paid' and inv.date_due:
+                due_date = datetime.strptime(inv.date_due, "%Y-%m-%d").date()
+                jours_retard = max((today - due_date).days, 0) if today > due_date else 0
 
             date_fact = inv.date_invoice and datetime.strptime(inv.date_invoice, "%Y-%m-%d").date() or ''
             due_date = inv.date_due and datetime.strptime(inv.date_due, "%Y-%m-%d").date() or ''
@@ -50,4 +54,4 @@ class CreancesClientsAPI(http.Controller):
                 "jours_retard": jours_retard
             })
 
-        return result
+        return Response(json.dumps(result), content_type='application/json;charset=utf-8', status=200)

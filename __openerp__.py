@@ -7,6 +7,7 @@
     'description': 'Permet de récupérer les créances clients pour Power Query/Excel via une API JSON',
     'author': 'Djakaridja Traore',
     'depends': ['account'],
+    'data': ['views/res_users_view.xml'],
     'installable': True,
     'application': False,
 }
